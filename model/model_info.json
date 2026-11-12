@@ -1,0 +1,19 @@
+{
+  "model_file": "model_estimasi_usia_1.h5",
+  "mae": 6.86,
+  "rmse": 9.57,
+  "r2": 0.768,
+  "baseline_mae": 15.43,
+  "epochs_run": 16,
+  "best_epoch": 11,
+  "acc_within": {
+    "3": 33.0,
+    "5": 49.9,
+    "10": 76.8
+  },
+  "groups": [],
+  "input_size": 128,
+  "selftest": {
+    "expected": 42.91115
+  }
+}

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Estimasi Usia dari Wajah</title>
+  <meta name="description" content="Estimasi usia dari foto wajah menggunakan model CNN yang dijalankan langsung di browser.">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js" defer></script>
+  <script src="js/engine.js" defer></script>
+  <script src="js/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
+      </span>
+      <div>
+        <h1>Estimasi Usia dari Wajah</h1>
+        <p class="sub">Proyek Akhir Praktikum Kecerdasan Buatan</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span id="status" class="pill pill-loading" role="status" aria-live="polite">
+        <span class="dot"></span><span id="status-text">Memuat model…</span>
+      </span>
+      <button id="retry-model" class="btn btn-small" type="button" hidden>Coba lagi</button>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Ganti tema tampilan" title="Ganti tema">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="alert" class="alert" role="alert" hidden>
+    <span id="alert-text"></span>
+    <button id="alert-close" class="alert-close" type="button" aria-label="Tutup pesan">&times;</button>
+  </div>
+
+  <main class="layout">
+    <!-- Kolom kiri: sumber foto dan pengaturan potongan -->
+    <section class="card" aria-labelledby="h-foto">
+      <h2 id="h-foto">1. Pilih foto</h2>
+
+      <div class="tabs" role="tablist">
+        <button class="tab is-active" role="tab" id="tab-upload" aria-selected="true" aria-controls="panel-upload" type="button">Unggah</button>
+        <button class="tab" role="tab" id="tab-camera" aria-selected="false" aria-controls="panel-camera" type="button">Kamera</button>
+      </div>
+
+      <div id="panel-upload" class="panel" role="tabpanel" aria-labelledby="tab-upload">
+        <label id="dropzone" class="dropzone" for="file-input">
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+          <strong>Seret foto ke sini</strong>
+          <span>atau klik untuk memilih berkas, atau tempel dengan Ctrl+V</span>
+          <small>JPG, PNG, atau WebP, maksimal 15 MB</small>
+        </label>
+        <input id="file-input" type="file" accept="image/*" hidden>
+      </div>
+
+      <div id="panel-camera" class="panel" role="tabpanel" aria-labelledby="tab-camera" hidden>
+        <div class="camera-box">
+          <video id="video" playsinline muted></video>
+          <div id="camera-idle" class="camera-idle">Kamera belum dinyalakan</div>
+        </div>
+        <div class="row">
+          <button id="cam-start" class="btn" type="button">Nyalakan kamera</button>
+          <button id="cam-shot" class="btn btn-primary" type="button" disabled>Ambil foto</button>
+          <button id="cam-stop" class="btn" type="button" disabled>Matikan</button>
+        </div>
+      </div>
+
+      <div id="editor" class="editor" hidden>
+        <h3>Atur area wajah</h3>
+        <p class="hint">Geser kotak, tarik sudutnya, atau gunakan roda mouse untuk memperbesar dan memperkecil. Usahakan wajah memenuhi kotak, seperti pada foto di dataset.</p>
+        <div id="stage-wrap" class="stage-wrap">
+          <canvas id="stage" aria-label="Pratinjau foto dengan kotak potong wajah"></canvas>
+        </div>
+        <div class="row row-between">
+          <label class="zoom" for="zoom">
+            <span>Zoom</span>
+            <input id="zoom" type="range" min="0" max="100" value="0">
+          </label>
+          <div class="row">
+            <button id="btn-center" class="btn btn-small" type="button">Pusatkan</button>
+            <button id="btn-detect" class="btn btn-small" type="button" hidden>Deteksi wajah</button>
+            <button id="btn-reset" class="btn btn-small" type="button">Ganti foto</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Kolom kanan: hasil -->
+    <section class="card" aria-labelledby="h-hasil">
+      <h2 id="h-hasil">2. Hasil estimasi</h2>
+
+      <div id="state-empty" class="empty">
+        <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-8 8"/></svg>
+        <p>Hasil akan muncul di sini setelah foto dipilih. Perkiraan diperbarui otomatis setiap kali area wajah diubah.</p>
+      </div>
+
+      <div id="state-result" hidden>
+        <div class="result-top">
+          <div class="preview-box">
+            <canvas id="preview" width="128" height="128" aria-label="Gambar yang diterima model"></canvas>
+            <small>Masukan model<br>128 × 128 px</small>
+          </div>
+          <div class="age-block" id="age-block">
+            <span class="age-label">Perkiraan usia</span>
+            <div class="age-line"><span id="age-value" class="age-value">–</span><span class="age-unit">tahun</span></div>
+            <span id="age-group" class="badge">–</span>
+          </div>
+        </div>
+
+        <div class="scale" aria-hidden="true">
+          <div class="scale-track">
+            <div id="scale-range" class="scale-range"></div>
+            <div id="scale-marker" class="scale-marker"></div>
+          </div>
+          <div class="scale-ticks"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+        </div>
+
+        <dl class="facts">
+          <div><dt>Rentang wajar</dt><dd id="fact-range">–</dd></div>
+          <div><dt>Konsistensi</dt><dd id="fact-consistency">–</dd></div>
+          <div><dt>Waktu proses</dt><dd id="fact-time">–</dd></div>
+        </dl>
+
+        <ul id="notes" class="notes"></ul>
+
+        <div class="row">
+          <button id="btn-save" class="btn btn-primary" type="button">Simpan ke riwayat</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Riwayat -->
+    <section class="card card-wide" aria-labelledby="h-riwayat">
+      <div class="row row-between">
+        <h2 id="h-riwayat">Riwayat</h2>
+        <button id="btn-clear" class="btn btn-small" type="button" hidden>Hapus riwayat</button>
+      </div>
+      <p id="history-empty" class="hint">Belum ada hasil yang disimpan. Riwayat hanya disimpan sementara selama halaman terbuka.</p>
+      <ul id="history" class="history"></ul>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p id="model-info" class="model-info"></p>
+    <p>Foto diproses sepenuhnya di browser Anda dan tidak dikirim ke server mana pun. Hasil berupa perkiraan statistik dan bukan pengukuran usia yang pasti.</p>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

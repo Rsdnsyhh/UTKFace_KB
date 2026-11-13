@@ -7,11 +7,13 @@ const CONFIG = {
   MODEL_URL: 'model/model.json',
   INFO_URL: 'model/model_info.json',   // dibuat oleh notebook (Bagian F)
   INPUT_SIZE: 128,          // ukuran sisi citra masukan model (piksel)
+  UTK_SIZE: 200,            // ukuran asli citra UTKFace (tahap resize pertama)
+  TTA_SCALES: [0.92, 1, 1.08], // skala potongan yang dirata-ratakan (mesin TensorFlow.js)
   MAE: 6.9,                 // nilai cadangan (tahun) bila model_info.json tidak ditemukan
   MAX_FILE_MB: 15,
   MIN_IMAGE_PX: 64,         // sisi terpendek foto yang masih diterima
   MAX_HISTORY: 8,
-  UNSTABLE_DIFF: 4,         // selisih (tahun) prediksi asli vs cermin yang dianggap kurang stabil
+  UNSTABLE_DIFF: 6,         // selisih terbesar (tahun) antarhasil prediksi yang dianggap kurang stabil
   PREDICT_DELAY_MS: 250,    // jeda sebelum prediksi ulang saat kotak digeser
   SELFTEST_TOL: 0.05,       // toleransi relatif uji mandiri (minimal 1 tahun)
   GROUPS: [
@@ -537,14 +539,36 @@ function onCropChanged(predict = true) {
   if (predict) schedulePredict();
 }
 
+/** Menggambar potongan ke kanvas S x S. Dua tahap: ke ~200 px (ukuran asli UTKFace, kualitas tinggi),
+ *  lalu bilinear ke S, meniru data latih yang dibesarkan/dikecilkan dari 200 px ke 128 px. */
+function renderCrop(target, x, y, s) {
+  const S = CONFIG.INPUT_SIZE, mid = document.createElement('canvas');
+  mid.width = mid.height = CONFIG.UTK_SIZE;
+  const m = mid.getContext('2d');
+  m.fillStyle = '#808080'; m.fillRect(0, 0, mid.width, mid.height);
+  m.imageSmoothingEnabled = true; m.imageSmoothingQuality = 'high';
+  m.drawImage(state.source, x, y, s, s, 0, 0, mid.width, mid.height);
+  const ctx = target.getContext('2d');
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low';   // bilinear
+  ctx.drawImage(mid, 0, 0, mid.width, mid.height, 0, 0, S, S);
+}
+
 function drawPreview() {
-  const S = CONFIG.INPUT_SIZE, ctx = els.preview.getContext('2d');
   const { x, y, s } = state.crop;
-  ctx.fillStyle = '#808080';                 // latar netral untuk gambar transparan
-  ctx.fillRect(0, 0, S, S);
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(state.source, x, y, s, s, 0, 0, S, S);
+  renderCrop(els.preview, x, y, s);
+}
+
+/** Kanvas masukan untuk potongan yang diperbesar/diperkecil (factor) dengan pusat yang sama. */
+function makeInput(factor) {
+  const S = CONFIG.INPUT_SIZE, c = state.crop;
+  if (factor === 1) return els.preview;
+  const s = Math.min(c.s * factor, state.srcW, state.srcH);
+  const x = clamp(c.x + c.s / 2 - s / 2, 0, state.srcW - s);
+  const y = clamp(c.y + c.s / 2 - s / 2, 0, state.srcH - s);
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  renderCrop(cv, x, y, s);
+  return cv;
 }
 
 /* ==========================================================================
@@ -595,15 +619,18 @@ async function runPrediction() {
   const t0 = performance.now();
 
   try {
-    // Dua masukan: foto asli dan versi cerminnya, lalu dirata-rata.
-    const values = await state.engine.predict(els.preview);
+    // Rata-rata beberapa skala potongan, masing-masing dengan versi cerminnya.
+    // Mesin JavaScript murni lebih lambat, jadi hanya memakai skala 1.
+    const scales = state.engine.name === 'tfjs' ? CONFIG.TTA_SCALES : [1];
+    const values = [];
+    for (const f of scales) values.push(...await state.engine.predict(makeInput(f)));
     if (id !== state.runId) return;           // ada prediksi yang lebih baru
 
-    if (values.length < 2 || !Number.isFinite(values[0]) || !Number.isFinite(values[1])) {
+    if (values.length < 2 || values.some((v) => !Number.isFinite(v))) {
       throw new AppError('Model menghasilkan nilai yang tidak valid. Coba foto atau area wajah yang lain.');
     }
-    const age = clamp((values[0] + values[1]) / 2, 1, 116);
-    const diff = Math.abs(values[0] - values[1]);
+    const age = clamp(values.reduce((a, b) => a + b, 0) / values.length, 1, 116);
+    const diff = Math.max(...values) - Math.min(...values);
     showResult(age, diff, performance.now() - t0);
   } catch (err) {
     handleError(err, 'Prediksi gagal dijalankan. Coba pilih ulang foto atau muat ulang halaman.');
@@ -648,7 +675,7 @@ function showResult(age, diff, ms) {
 
   const notes = [];
   if (!stable) {
-    notes.push({ warn: true, text: `Prediksi dari foto asli dan versi cerminnya berbeda ${diff.toFixed(1)} tahun. ` +
+    notes.push({ warn: true, text: `Prediksi dari beberapa variasi potongan berbeda hingga ${diff.toFixed(1)} tahun. ` +
       'Coba foto yang lebih jelas atau atur ulang kotak wajah.' });
   }
   if (age < 6 || age > 70) {

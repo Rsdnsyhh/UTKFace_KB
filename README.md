@@ -59,7 +59,7 @@ Agar hasil lebih baik, gunakan foto yang menghadap ke depan, pencahayaan cukup, 
 
 ## Cara kerja
 
-Foto yang dipilih dipotong sesuai kotak, diubah menjadi 128 × 128 piksel, lalu nilai pikselnya dibagi 255 agar berada pada rentang 0 sampai 1. Langkah ini sama dengan prapemrosesan saat pelatihan di notebook. Gambar tersebut dimasukkan ke model bersama versi cerminnya, lalu dua hasilnya dirata-rata. Selisih antara kedua hasil dipakai sebagai petunjuk konsistensi: semakin besar selisihnya, semakin kurang stabil prediksi untuk foto tersebut.
+Foto yang dipilih dipotong sesuai kotak, diubah menjadi 128 × 128 piksel, lalu nilai pikselnya dibagi 255 agar berada pada rentang 0 sampai 1. Langkah ini sama dengan prapemrosesan saat pelatihan di notebook. Resize dilakukan dua tahap (ke 200 px, lalu bilinear ke 128 px) agar mirip citra UTKFace saat pelatihan. Pada mesin TensorFlow.js, prediksi dihitung dari tiga skala potongan (92%, 100%, 108%), masing-masing bersama versi cerminnya, lalu keenam hasil dirata-rata. Selisih terbesar antarhasil dipakai sebagai petunjuk konsistensi: semakin besar, semakin kurang stabil prediksi untuk foto tersebut.
 
 Aplikasi memiliki dua mesin untuk menjalankan model yang sama:
 
